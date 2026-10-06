@@ -1,0 +1,611 @@
+/* =========================================================
+   UPTRACK — APPLE-INSPIRED UI
+   ========================================================= */
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "SF Pro Display",
+        "SF Pro Text",
+        "Segoe UI",
+        Roboto,
+        Helvetica,
+        Arial,
+        sans-serif;
+
+    background: #f5f5f7;
+    color: #1d1d1f;
+
+    -webkit-font-smoothing: antialiased;
+}
+
+
+/* =========================================================
+   MAIN CONTAINER
+   ========================================================= */
+
+.container {
+    width: min(1120px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 60px 0 50px;
+}
+
+
+/* =========================================================
+   HEADER
+   ========================================================= */
+
+header {
+    text-align: center;
+    margin-bottom: 45px;
+}
+
+header h1 {
+    margin: 0;
+
+    font-size: clamp(42px, 6vw, 68px);
+    line-height: 1;
+    letter-spacing: -3px;
+    font-weight: 700;
+
+    color: #1d1d1f;
+}
+
+header p {
+    margin: 14px 0 0;
+
+    font-size: 19px;
+    font-weight: 400;
+
+    color: #6e6e73;
+    letter-spacing: -0.2px;
+}
+
+
+/* =========================================================
+   SUMMARY CARDS
+   ========================================================= */
+
+.project-summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+
+    gap: 16px;
+    margin-bottom: 22px;
+}
+
+.summary-card {
+    position: relative;
+
+    min-height: 125px;
+    padding: 24px;
+
+    border: 1px solid rgba(0, 0, 0, 0.07);
+    border-radius: 20px;
+
+    background: rgba(255, 255, 255, 0.82);
+
+    box-shadow:
+        0 4px 18px rgba(0, 0, 0, 0.035);
+
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.summary-card:hover {
+    transform: translateY(-2px);
+
+    box-shadow:
+        0 10px 30px rgba(0, 0, 0, 0.07);
+}
+
+.summary-label {
+    display: block;
+
+    margin-bottom: 12px;
+
+    font-size: 13px;
+    font-weight: 500;
+
+    color: #6e6e73;
+}
+
+.summary-card strong {
+    display: block;
+
+    font-size: 34px;
+    line-height: 1;
+
+    font-weight: 600;
+    letter-spacing: -1.5px;
+
+    color: #1d1d1f;
+}
+
+
+/* =========================================================
+   GENERAL CARDS
+   ========================================================= */
+
+.card {
+    margin-top: 22px;
+    padding: 30px;
+
+    border: 1px solid rgba(0, 0, 0, 0.07);
+    border-radius: 24px;
+
+    background: rgba(255, 255, 255, 0.9);
+
+    box-shadow:
+        0 6px 25px rgba(0, 0, 0, 0.045);
+
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+}
+
+.card h2 {
+    margin: 0 0 24px;
+
+    font-size: 25px;
+    line-height: 1.2;
+
+    letter-spacing: -0.8px;
+    font-weight: 600;
+
+    color: #1d1d1f;
+}
+
+
+/* =========================================================
+   PROJECT SELECTION
+   ========================================================= */
+
+label {
+    display: block;
+
+    margin: 0 0 8px;
+
+    font-size: 13px;
+    font-weight: 500;
+
+    color: #6e6e73;
+}
+
+select,
+input[type="text"] {
+    width: 100%;
+
+    min-height: 48px;
+
+    padding: 0 15px;
+
+    border: 1px solid #d2d2d7;
+    border-radius: 12px;
+
+    background: #ffffff;
+
+    color: #1d1d1f;
+
+    font-family: inherit;
+    font-size: 15px;
+
+    outline: none;
+
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease,
+        background 0.2s ease;
+}
+
+input[type="text"] {
+    margin-bottom: 18px;
+}
+
+select:hover,
+input[type="text"]:hover {
+    border-color: #b8b8bd;
+}
+
+select:focus,
+input[type="text"]:focus {
+    border-color: #0071e3;
+
+    box-shadow:
+        0 0 0 4px rgba(0, 113, 227, 0.12);
+}
+
+
+/* =========================================================
+   BUTTONS
+   ========================================================= */
+
+.buttons {
+    display: flex;
+    gap: 10px;
+
+    margin-top: 20px;
+}
+
+button {
+    min-height: 46px;
+
+    padding: 0 20px;
+
+    border: none;
+    border-radius: 12px;
+
+    background: #0071e3;
+    color: #ffffff;
+
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+
+    cursor: pointer;
+
+    transition:
+        transform 0.15s ease,
+        background 0.15s ease,
+        box-shadow 0.15s ease;
+}
+
+button:hover {
+    background: #0077ed;
+
+    transform: translateY(-1px);
+
+    box-shadow:
+        0 5px 15px rgba(0, 113, 227, 0.2);
+}
+
+button:active {
+    transform: translateY(0);
+}
+
+
+/* =========================================================
+   PROJECT INFORMATION
+   ========================================================= */
+
+.info-grid {
+    display: grid;
+
+    grid-template-columns: repeat(2, 1fr);
+
+    gap: 1px;
+
+    overflow: hidden;
+
+    border: 1px solid #e5e5e7;
+    border-radius: 16px;
+
+    background: #e5e5e7;
+}
+
+.info-item {
+    min-height: 90px;
+
+    padding: 19px 20px;
+
+    background: #ffffff;
+}
+
+.info-item.full {
+    grid-column: 1 / -1;
+}
+
+.info-item span {
+    display: block;
+
+    margin-bottom: 8px;
+
+    font-size: 12px;
+    font-weight: 500;
+
+    color: #86868b;
+}
+
+.info-item strong {
+    display: block;
+
+    font-size: 16px;
+    line-height: 1.4;
+
+    font-weight: 500;
+
+    color: #1d1d1f;
+}
+
+
+/* =========================================================
+   MONTHLY HISTORY
+   ========================================================= */
+
+.history-table {
+    width: 100%;
+
+    margin-top: 5px;
+
+    border-collapse: separate;
+    border-spacing: 0;
+
+    overflow: hidden;
+
+    border: 1px solid #e5e5e7;
+    border-radius: 16px;
+
+    background: #ffffff;
+}
+
+.history-table th,
+.history-table td {
+    padding: 15px 17px;
+
+    border-bottom: 1px solid #eeeeef;
+
+    text-align: left;
+
+    font-size: 14px;
+}
+
+.history-table th {
+    background: #f5f5f7;
+
+    color: #6e6e73;
+
+    font-size: 12px;
+    font-weight: 600;
+
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.history-table td {
+    color: #1d1d1f;
+}
+
+.history-table td:first-child {
+    font-weight: 500;
+    color: #424245;
+}
+
+.history-table tr:last-child td {
+    border-bottom: none;
+}
+
+.history-table tbody tr {
+    transition: background 0.15s ease;
+}
+
+.history-table tbody tr:hover {
+    background: #fafafa;
+}
+
+
+/* =========================================================
+   WHAT CHANGED
+   ========================================================= */
+
+.changes-list {
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 10px;
+
+    margin: 0;
+    padding: 0;
+
+    list-style: none;
+}
+
+.changes-list li {
+    padding: 14px 16px;
+
+    border: 1px solid #e8e8ea;
+    border-radius: 13px;
+
+    background: #fafafa;
+
+    font-size: 14px;
+    line-height: 1.5;
+
+    color: #424245;
+}
+
+
+/* =========================================================
+   PREDICTION RESULT
+   ========================================================= */
+
+.result {
+    text-align: center;
+
+    padding: 38px 30px;
+}
+
+.result h2 {
+    margin-bottom: 28px;
+}
+
+.probability span {
+    display: block;
+
+    margin-bottom: 8px;
+
+    font-size: 13px;
+    font-weight: 500;
+
+    color: #86868b;
+}
+
+.probability strong {
+    display: block;
+
+    font-size: 48px;
+    line-height: 1;
+
+    letter-spacing: -2px;
+
+    font-weight: 600;
+
+    color: #1d1d1f;
+}
+
+
+/* =========================================================
+   RISK STATUS
+   ========================================================= */
+
+.risk {
+    display: inline-flex;
+
+    align-items: center;
+    justify-content: center;
+
+    margin-top: 22px;
+
+    padding: 8px 15px;
+
+    border-radius: 999px;
+
+    font-size: 12px;
+    font-weight: 600;
+
+    letter-spacing: 0.3px;
+}
+
+.risk.delay {
+    background: #fff0f0;
+    color: #d70015;
+}
+
+.risk.safe {
+    background: #ecfdf3;
+    color: #188038;
+}
+
+
+/* =========================================================
+   NOT AVAILABLE
+   ========================================================= */
+
+.history-unavailable {
+    margin: 0;
+
+    padding: 16px;
+
+    border-radius: 12px;
+
+    background: #f5f5f7;
+
+    color: #86868b;
+
+    font-size: 14px;
+}
+
+
+/* =========================================================
+   FOOTER
+   ========================================================= */
+
+footer {
+    margin-top: 40px;
+
+    text-align: center;
+
+    font-size: 12px;
+
+    color: #86868b;
+}
+
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 900px) {
+
+    .project-summary {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+}
+
+
+@media (max-width: 650px) {
+
+    .container {
+        width: min(100% - 24px, 600px);
+
+        padding-top: 35px;
+    }
+
+    header {
+        margin-bottom: 30px;
+    }
+
+    header h1 {
+        font-size: 48px;
+        letter-spacing: -2px;
+    }
+
+    header p {
+        font-size: 16px;
+    }
+
+    .project-summary {
+        grid-template-columns: 1fr;
+    }
+
+    .card {
+        padding: 22px;
+
+        border-radius: 20px;
+    }
+
+    .info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .info-item.full {
+        grid-column: auto;
+    }
+
+    .buttons {
+        flex-direction: column;
+    }
+
+    button {
+        width: 100%;
+    }
+
+    .history-table {
+        display: block;
+
+        overflow-x: auto;
+
+        white-space: nowrap;
+    }
+
+    .probability strong {
+        font-size: 42px;
+    }
+
+}
