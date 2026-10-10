@@ -6,7 +6,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Uptrack - Delay Risk Predictor</title>
+    <title>UpTrack Research — Experimental Delay Model</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
 
     <link rel="stylesheet"
           href="{{ url_for('static', filename='style.css') }}">
@@ -181,13 +182,24 @@
 
     <header>
 
-        <h1>Uptrack</h1>
+        <h1>UpTrack Research</h1>
 
         <p>
-            Infrastructure Project Delay Risk Predictor
+            Experimental analysis of public infrastructure records · <a href="{{ url_for('dashboard') }}">Return to your portfolio</a>
         </p>
 
     </header>
+
+    <section class="card">
+        <h2>Research data only</h2>
+        <p>
+            This page uses public PAIMANA/MoSPI monthly records for model exploration,
+            not as personal projects. The experimental classifier predicts whether an
+            anticipated completion date moves later in the next report; it does not
+            determine whether a project will ultimately miss its original deadline.
+            Model estimates are unavailable when required inputs are missing.
+        </p>
+    </section>
 
 
     <!-- =====================================================
@@ -1229,7 +1241,7 @@
         <div class="probability">
 
             <span>
-                Simulated Delay Probability
+                Experimental score for a later anticipated-date shift
             </span>
 
             <strong>
@@ -1273,7 +1285,7 @@
 
         <div class="risk delay">
 
-            DELAY RISK
+            EXPERIMENTAL SIGNAL: LATER DATE SHIFT
 
         </div>
 
@@ -1281,7 +1293,7 @@
 
         <div class="risk safe">
 
-            NO DELAY RISK
+            NO LATER DATE SHIFT SIGNAL
 
         </div>
 
@@ -1290,14 +1302,20 @@
 
         <p class="history-unavailable">
 
-            This is a simulated result from the existing
-            Logistic Regression model. It does not change
-            the project's actual data or retrain the model.
+            Experimental model output only. This is not a calibrated estimate,
+            does not establish whether a project will miss its original deadline,
+            and does not change project data or retrain the model.
 
         </p>
 
     </section>
 
+    {% endif %}
+    {% if simulation_message %}
+    <section class="card">
+        <h2>Scenario estimate unavailable</h2>
+        <p>{{ simulation_message }}</p>
+    </section>
     {% endif %}
 
 
@@ -1319,7 +1337,7 @@
         <div class="probability">
 
             <span>
-                Delay Probability
+                Experimental score for a later anticipated-date shift
             </span>
 
             <strong>
@@ -1336,7 +1354,7 @@
 
         <div class="risk delay">
 
-            DELAY RISK
+            EXPERIMENTAL SIGNAL: LATER DATE SHIFT
 
         </div>
 
@@ -1346,7 +1364,7 @@
 
         <div class="risk safe">
 
-            NO DELAY RISK
+            NO LATER DATE SHIFT SIGNAL
 
         </div>
 
@@ -1356,7 +1374,16 @@
 
     </section>
 
-
+    <p class="history-unavailable">
+        Experimental model output, not a calibrated probability or a prediction of
+        missing the original deadline. Review project records and risks directly.
+    </p>
+    {% endif %}
+    {% if prediction_message %}
+    <section class="card">
+        <h2>Experimental estimate unavailable</h2>
+        <p>{{ prediction_message }}</p>
+    </section>
     {% endif %}
     {% endif %}
 

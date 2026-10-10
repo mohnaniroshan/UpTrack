@@ -18,3 +18,8 @@ env/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# User project database
+data/*.sqlite3
+data/*.sqlite3-shm
+data/*.sqlite3-wal

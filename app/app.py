@@ -1,17 +1,35 @@
-from flask import Flask, render_template, request
+import csv
+import io
+import json
+import math
+import os
+import secrets
+import sqlite3
+import uuid
+from datetime import date, datetime
+from zipfile import BadZipFile
+from flask import Flask, abort, flash, redirect, render_template, request, url_for
+from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 import pandas as pd
 import numpy as np
 import pickle
 import re
 from pathlib import Path
+from project_store import connect, delete_project, get_project, get_projects, init_db, save_project
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
+app.config["MAX_CONTENT_LENGTH"] = 3 * 1024 * 1024
 
 # ============================================================
 # FILE PATHS
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+DATABASE_FILE = BASE_DIR / "data" / "uptrack_projects.sqlite3"
+app.config["DATABASE"] = str(DATABASE_FILE)
+init_db(DATABASE_FILE)
 
 APRIL_FILE = BASE_DIR / "data" / "april_projects.csv"
 MAY_FILE = BASE_DIR / "data" / "may_projects.csv"
@@ -204,24 +222,6 @@ def numeric_value(value):
 # FEATURE MEDIANS
 # ============================================================
 
-feature_medians = {}
-
-for column in FEATURE_COLUMNS:
-
-    if column in ml_dataset_df.columns:
-
-        numeric_column = pd.to_numeric(
-            ml_dataset_df[column],
-            errors="coerce"
-        )
-
-        feature_medians[column] = numeric_column.median()
-
-    else:
-
-        feature_medians[column] = 0
-
-
 # ============================================================
 # CREATE MODEL FEATURES
 # ============================================================
@@ -266,17 +266,15 @@ def make_features(project):
         project.get("time_overrun_months")
     )
 
-    values = []
+    missing = [column for column in FEATURE_COLUMNS if features.get(column) is None or pd.isna(features.get(column))]
+    if missing:
+        raise ValueError(
+            "Required model inputs are missing or invalid: "
+            + ", ".join(missing)
+            + ". No values were estimated."
+        )
 
-    for column in FEATURE_COLUMNS:
-
-        value = features.get(column)
-
-        if value is None or pd.isna(value):
-            value = feature_medians[column]
-
-        values.append(float(value))
-
+    values = [float(features[column]) for column in FEATURE_COLUMNS]
     return np.array(values).reshape(1, -1)
 
 
@@ -635,8 +633,8 @@ def build_changes(
 # MAIN PAGE
 # ============================================================
 
-@app.route("/", methods=["GET", "POST"])
-def index():
+@app.route("/research", methods=["GET", "POST"])
+def research():
 
     project_names = (
         df["project_name"]
@@ -665,6 +663,7 @@ def index():
 
     prediction = None
     probability = None
+    prediction_message = None
 
     changes = []
 
@@ -678,6 +677,7 @@ def index():
     simulation_prediction = None
     simulation_probability = None
     simulation_date = ""
+    simulation_message = None
 
     if request.method == "POST":
 
@@ -755,6 +755,10 @@ def index():
 
                         prediction = None
                         probability = None
+                        prediction_message = (
+                            str(error) if isinstance(error, ValueError)
+                            else "The experimental model could not evaluate this record."
+                        )
 
                 # ====================================================
                 # WHAT-IF SIMULATION
@@ -797,6 +801,10 @@ def index():
 
                             simulation_prediction = None
                             simulation_probability = None
+                            simulation_message = (
+                                str(error) if isinstance(error, ValueError)
+                                else "The experimental model could not evaluate this scenario."
+                            )
 
     return render_template(
         "index.html",
@@ -832,8 +840,415 @@ def index():
 
         simulation_probability=simulation_probability,
 
-        simulation_date=simulation_date
+        simulation_date=simulation_date,
+        prediction_message=prediction_message,
+        simulation_message=simulation_message
     )
+
+
+PROJECT_STATUSES = ("Planned", "In Progress", "On Hold", "Completed")
+IMPORT_LIMIT = 1000
+IMPORT_COLUMNS = {
+    "project_id": ("project_id", "id", "unique_id"),
+    "name": ("name", "project_name", "project"),
+    "project_type": ("project_type", "type"),
+    "location": ("location",),
+    "start_date": ("start_date", "project_start_date"),
+    "original_completion_date": ("original_completion_date", "original_end_date"),
+    "expected_completion_date": ("expected_completion_date", "current_expected_completion_date", "revised_completion_date"),
+    "budget": ("budget", "original_budget"),
+    "expenditure": ("expenditure", "spent", "cumulative_expenditure"),
+    "progress": ("progress", "progress_percent", "progress_percentage"),
+    "status": ("status", "project_status"),
+    "milestones": ("milestones", "milestone"),
+    "notes": ("notes", "note"),
+}
+
+
+def _date_value(value, label, errors):
+    if value is None or str(value).strip() == "":
+        return None
+    if isinstance(value, (date, datetime)):
+        return value.date().isoformat() if isinstance(value, datetime) else value.isoformat()
+    try:
+        return date.fromisoformat(str(value).strip()[:10]).isoformat()
+    except ValueError:
+        errors.append(f"{label} must be a valid date in YYYY-MM-DD format.")
+        return None
+
+
+def _number_value(value, label, errors, *, required=False, maximum=None):
+    if value is None or str(value).strip() == "":
+        if required:
+            errors.append(f"{label} is required.")
+        return 0.0 if required else None
+    try:
+        number = float(str(value).replace(",", "").replace("₹", "").strip())
+    except (ValueError, TypeError):
+        errors.append(f"{label} must be a number.")
+        return None
+    if not math.isfinite(number) or number < 0:
+        errors.append(f"{label} must be zero or greater.")
+        return None
+    if maximum is not None and number > maximum:
+        errors.append(f"{label} must be no more than {maximum:g}.")
+        return None
+    return number
+
+
+def _parse_milestones(value, errors):
+    if isinstance(value, list):
+        raw_lines = [str(item.get("name", "")) + (" | " + str(item.get("due_date")) if item.get("due_date") else "") for item in value if isinstance(item, dict)]
+    else:
+        raw_lines = str(value or "").splitlines()
+    milestones = []
+    for line in raw_lines:
+        line = line.strip()
+        if not line:
+            continue
+        pieces = [piece.strip() for piece in line.split("|", 1)]
+        name = pieces[0]
+        if not name:
+            errors.append("Milestone names cannot be blank.")
+            continue
+        if len(name) > 120:
+            errors.append("Milestone names must be 120 characters or fewer.")
+            continue
+        due = _date_value(pieces[1], "Milestone date", errors) if len(pieces) == 2 and pieces[1] else None
+        milestones.append({"name": name, "due_date": due, "complete": False})
+    if len(milestones) > 30:
+        errors.append("A project can have at most 30 milestones.")
+    return milestones[:30]
+
+
+def _validate_project(raw):
+    errors = []
+    project_id = str(raw.get("project_id") or "").strip()
+    name = str(raw.get("name") or "").strip()
+    if not project_id:
+        errors.append("Project ID is required.")
+    elif len(project_id) > 60:
+        errors.append("Project ID must be 60 characters or fewer.")
+    if not name:
+        errors.append("Project name is required.")
+    elif len(name) > 160:
+        errors.append("Project name must be 160 characters or fewer.")
+
+    start = _date_value(raw.get("start_date"), "Start date", errors)
+    original = _date_value(raw.get("original_completion_date"), "Original completion date", errors)
+    expected = _date_value(raw.get("expected_completion_date"), "Expected completion date", errors)
+    for label, value in (("Original completion date", original), ("Expected completion date", expected)):
+        if start and value and value < start:
+            errors.append(f"{label} cannot be before the start date.")
+
+    budget = _number_value(raw.get("budget"), "Budget", errors)
+    expenditure = _number_value(raw.get("expenditure"), "Expenditure", errors)
+    progress = _number_value(raw.get("progress"), "Progress", errors, maximum=100)
+    if progress is None:
+        progress = 0.0
+    status = str(raw.get("status") or "Planned").strip()
+    if status not in PROJECT_STATUSES:
+        errors.append("Status must be Planned, In Progress, On Hold, or Completed.")
+    milestones = _parse_milestones(raw.get("milestones"), errors)
+    project_type = str(raw.get("project_type") or "").strip()
+    location = str(raw.get("location") or "").strip()
+    notes = str(raw.get("notes") or "").strip()
+    if len(project_type) > 100:
+        errors.append("Project type must be 100 characters or fewer.")
+    if len(location) > 160:
+        errors.append("Location must be 160 characters or fewer.")
+    if len(notes) > 3000:
+        errors.append("Notes must be 3,000 characters or fewer.")
+    return {
+        "project_id": project_id,
+        "name": name,
+        "project_type": project_type,
+        "location": location,
+        "start_date": start,
+        "original_completion_date": original,
+        "expected_completion_date": expected,
+        "budget": budget,
+        "expenditure": expenditure,
+        "progress": progress,
+        "status": status,
+        "milestones": milestones,
+        "notes": notes,
+    }, errors
+
+
+def _read_import(file_storage):
+    filename = (file_storage.filename or "").lower()
+    if not filename.endswith((".csv", ".xlsx")):
+        raise ValueError("Choose a CSV or Excel .xlsx file.")
+    payload = file_storage.read()
+    if not payload:
+        raise ValueError("The selected file is empty.")
+    try:
+        if filename.endswith(".csv"):
+            text = payload.decode("utf-8-sig")
+            source_rows = list(csv.DictReader(io.StringIO(text)))
+        else:
+            workbook = load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
+            sheet = workbook.active
+            values = sheet.iter_rows(values_only=True)
+            headers = next(values, None)
+            if not headers:
+                raise ValueError("The selected spreadsheet has no header row.")
+            header_names = [str(value or "").strip() for value in headers]
+            source_rows = [
+                dict(zip(header_names, row))
+                for row in values
+                if any(value is not None and str(value).strip() for value in row)
+            ]
+            workbook.close()
+    except UnicodeDecodeError as error:
+        raise ValueError("CSV files must use UTF-8 text encoding.") from error
+    except (csv.Error, OSError, BadZipFile, InvalidFileException) as error:
+        raise ValueError("The file could not be read. Check that it is a valid CSV or .xlsx file.") from error
+    if len(source_rows) > IMPORT_LIMIT:
+        raise ValueError(f"Imports are limited to {IMPORT_LIMIT} rows per file.")
+    if not source_rows:
+        raise ValueError("No project rows were found in the file.")
+
+    lookup = {}
+    for key, aliases in IMPORT_COLUMNS.items():
+        for alias in aliases:
+            lookup[re.sub(r"[^a-z0-9]+", "_", alias.lower()).strip("_")] = key
+    normalized_rows = []
+    for source in source_rows:
+        normalized = {}
+        for key, value in source.items():
+            normalized_key = re.sub(r"[^a-z0-9]+", "_", str(key).strip().lower()).strip("_")
+            if normalized_key in lookup:
+                normalized[lookup[normalized_key]] = value
+        normalized_rows.append(normalized)
+    return normalized_rows
+
+
+def _project_warnings(project, today):
+    warnings = []
+    if project["status"] != "Completed" and project.get("expected_completion_date"):
+        expected = date.fromisoformat(project["expected_completion_date"])
+        if expected < today:
+            warnings.append("Expected completion date has passed.")
+        elif (expected - today).days <= 30:
+            warnings.append("Expected completion is within 30 days.")
+    if project["status"] == "In Progress" and not project.get("milestones"):
+        warnings.append("No milestones have been recorded.")
+    budget = project.get("budget")
+    expenditure = project.get("expenditure")
+    if budget is not None and expenditure is not None and expenditure > budget:
+        warnings.append("Recorded expenditure is above the budget.")
+    elif budget and expenditure is not None and project.get("progress", 0) < 100:
+        spend_share = expenditure / budget
+        progress_share = project.get("progress", 0) / 100
+        if spend_share > progress_share + 0.2:
+            warnings.append("Recorded spending is more than 20 percentage points ahead of progress.")
+    return warnings
+
+
+@app.route("/", methods=["GET"])
+def dashboard():
+    projects = get_projects()
+    today = date.today()
+    query = request.args.get("q", "").strip().lower()
+    status_filter = request.args.get("status", "").strip()
+    visible_projects = [
+        project for project in projects
+        if (not query or query in " ".join(str(project.get(key) or "") for key in ("project_id", "name", "project_type", "location")).lower())
+        and (not status_filter or project["status"] == status_filter)
+    ]
+    for project in visible_projects:
+        project["warnings"] = _project_warnings(project, today)
+    for project in projects:
+        project["warnings"] = _project_warnings(project, today)
+    counts = {
+        "total": len(projects),
+        "in_progress": sum(project["status"] == "In Progress" for project in projects),
+        "completed": sum(project["status"] == "Completed" for project in projects),
+        "warnings": sum(bool(project["warnings"]) for project in projects),
+    }
+    budget_total = sum(project["budget"] or 0 for project in projects)
+    expenditure_total = sum(project["expenditure"] or 0 for project in projects)
+    budget_count = sum(project["budget"] is not None for project in projects)
+    expenditure_count = sum(project["expenditure"] is not None for project in projects)
+    deadline_list = sorted(
+        (
+            project for project in projects
+            if project["status"] != "Completed" and project.get("expected_completion_date")
+            and project["expected_completion_date"] >= today.isoformat()
+        ),
+        key=lambda project: project["expected_completion_date"],
+    )[:5]
+    status_counts = {
+        status: sum(project["status"] == status for project in projects)
+        for status in PROJECT_STATUSES
+    }
+    selected = None
+    edit_project = None
+    selected_id = request.args.get("project", type=int)
+    if selected_id:
+        selected = get_project(selected_id)
+        if selected is None:
+            abort(404)
+        selected["warnings"] = _project_warnings(selected, today)
+        if request.args.get("edit") == "1":
+            edit_project = selected
+    preview = None
+    token = request.args.get("import")
+    if token:
+        with connect() as connection:
+            row = connection.execute("SELECT rows_json FROM import_batches WHERE token = ?", (token,)).fetchone()
+        if row:
+            preview = {"token": token, "rows": json.loads(row["rows_json"])}
+    return render_template(
+        "dashboard.html", projects=visible_projects, counts=counts,
+        budget_total=budget_total, expenditure_total=expenditure_total,
+        budget_count=budget_count, expenditure_count=expenditure_count,
+        deadlines=deadline_list, status_counts=status_counts,
+        statuses=PROJECT_STATUSES, selected=selected, edit_project=edit_project,
+        preview=preview, query=request.args.get("q", ""),
+        status_filter=status_filter,
+    )
+
+
+@app.route("/projects", methods=["POST"])
+def project_save():
+    record_id = request.form.get("record_id", type=int)
+    existing = get_project(record_id) if record_id else None
+    if record_id and existing is None:
+        abort(404)
+    project, errors = _validate_project(request.form)
+    if not errors:
+        with connect() as connection:
+            duplicate = connection.execute(
+                "SELECT id FROM projects WHERE project_id = ? COLLATE NOCASE AND id != ?",
+                (project["project_id"], record_id or -1),
+            ).fetchone()
+        if duplicate:
+            errors.append("That project ID is already in use.")
+    if errors:
+        for error in errors:
+            flash(error, "error")
+        return redirect(url_for("dashboard", project=record_id) if record_id else url_for("dashboard"))
+    try:
+        save_project(project, record_id)
+    except sqlite3.IntegrityError:
+        flash("That project ID is already in use.", "error")
+        return redirect(url_for("dashboard", project=record_id) if record_id else url_for("dashboard"))
+    flash("Project changes saved." if record_id else "Project added.", "success")
+    return redirect(url_for("dashboard", project=record_id) if record_id else url_for("dashboard"))
+
+
+@app.route("/projects/<int:record_id>/delete", methods=["POST"])
+def project_delete(record_id):
+    if get_project(record_id) is None:
+        abort(404)
+    delete_project(record_id)
+    flash("Project deleted.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/projects/template.csv", methods=["GET"])
+def import_template():
+    headers = list(IMPORT_COLUMNS.keys())
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    return app.response_class(
+        output.getvalue(), mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=uptrack_import_template.csv"},
+    )
+
+
+@app.route("/imports/preview", methods=["POST"])
+def import_preview():
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        flash("Choose a CSV or .xlsx file to preview.", "error")
+        return redirect(url_for("dashboard"))
+    try:
+        raw_rows = _read_import(upload)
+    except ValueError as error:
+        flash(str(error), "error")
+        return redirect(url_for("dashboard"))
+    seen_ids = set()
+    with connect() as connection:
+        existing_ids = {
+            row["project_id"].casefold()
+            for row in connection.execute("SELECT project_id FROM projects").fetchall()
+        }
+    preview_rows = []
+    for number, raw in enumerate(raw_rows, 2):
+        project, errors = _validate_project(raw)
+        normalized_id = project["project_id"].casefold()
+        if normalized_id and (normalized_id in existing_ids or normalized_id in seen_ids):
+            errors.append("Project ID duplicates an existing project or another row in this file.")
+        if normalized_id:
+            seen_ids.add(normalized_id)
+        preview_rows.append({"row": number, "project": project, "errors": errors})
+    token = uuid.uuid4().hex
+    with connect() as connection:
+        connection.execute("DELETE FROM import_batches WHERE created_at < datetime('now', '-1 day')")
+        connection.execute(
+            "INSERT INTO import_batches (token, rows_json) VALUES (?, ?)",
+            (token, json.dumps(preview_rows, ensure_ascii=False)),
+        )
+        connection.commit()
+    return redirect(url_for("dashboard", **{"import": token}))
+
+
+@app.route("/imports/commit", methods=["POST"])
+def import_commit():
+    token = request.form.get("token", "")
+    with connect() as connection:
+        batch = connection.execute("SELECT rows_json FROM import_batches WHERE token = ?", (token,)).fetchone()
+        if batch is None:
+            flash("That import preview has expired. Upload the file again.", "error")
+            return redirect(url_for("dashboard"))
+        rows = json.loads(batch["rows_json"])
+        errors = [f"Row {row['row']}: {error}" for row in rows for error in row["errors"]]
+        current_ids = {
+            row["project_id"].casefold()
+            for row in connection.execute("SELECT project_id FROM projects").fetchall()
+        }
+        incoming_ids = [row["project"]["project_id"].casefold() for row in rows]
+        if any(not value or value in current_ids for value in incoming_ids):
+            errors.append("A project ID now conflicts with a saved project. No rows were imported.")
+        if len(incoming_ids) != len(set(incoming_ids)):
+            errors.append("Duplicate project IDs were found. No rows were imported.")
+        if errors:
+            for error in errors[:30]:
+                flash(error, "error")
+            return redirect(url_for("dashboard", **{"import": token}))
+        fields = tuple(rows[0]["project"].keys()) if rows else ()
+        if not fields:
+            flash("The import contains no rows.", "error")
+            return redirect(url_for("dashboard"))
+        placeholders = ", ".join("?" for _ in fields)
+        statement = f"INSERT INTO projects ({', '.join(fields)}) VALUES ({placeholders})"
+        try:
+            connection.executemany(
+                statement,
+                [
+                    tuple(json.dumps(row["project"][field], ensure_ascii=False) if field == "milestones" else row["project"][field] for field in fields)
+                    for row in rows
+                ],
+            )
+        except sqlite3.IntegrityError:
+            connection.rollback()
+            flash("A project ID conflicts with a saved record. No rows were imported.", "error")
+            return redirect(url_for("dashboard", **{"import": token}))
+        connection.execute("DELETE FROM import_batches WHERE token = ?", (token,))
+        connection.commit()
+    flash(f"Imported {len(rows)} projects.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.errorhandler(413)
+def too_large(_error):
+    flash("The file is too large. Maximum upload size is 3 MB.", "error")
+    return redirect(url_for("dashboard"))
 
 
 # ============================================================
@@ -841,7 +1256,4 @@ def index():
 # ============================================================
 
 if __name__ == "__main__":
-
-    app.run(
-        debug=True
-    )
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
