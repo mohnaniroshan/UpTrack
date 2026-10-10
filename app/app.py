@@ -6,7 +6,7 @@ import os
 import secrets
 import sqlite3
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zipfile import BadZipFile
 from flask import Flask, abort, flash, redirect, render_template, request, url_for
 from openpyxl import load_workbook
@@ -1047,10 +1047,199 @@ def _project_warnings(project, today):
     return warnings
 
 
-@app.route("/", methods=["GET"])
+def _project_delay_assessment(project, today):
+    """Explain schedule and budget signals without applying the historical ML model."""
+    if project["status"] == "Completed":
+        return {
+            "level": "Completed",
+            "tone": "complete",
+            "reasons": ["This project is marked complete; no future delay risk is assessed."],
+        }
+
+    high_signals = []
+    watch_signals = []
+    context_signals = []
+    reasons = []
+    progress = float(project.get("progress") or 0)
+    expected_raw = project.get("expected_completion_date")
+    original_raw = project.get("original_completion_date")
+    expected = date.fromisoformat(expected_raw) if expected_raw else None
+    original = date.fromisoformat(original_raw) if original_raw else None
+
+    if expected:
+        days_left = (expected - today).days
+        if days_left < 0:
+            high_signals.append(f"The expected completion date passed {-days_left} day(s) ago.")
+        elif days_left <= 14 and progress < 80:
+            high_signals.append(
+                f"The deadline is {days_left} day(s) away and recorded progress is {progress:g}%."
+            )
+        elif days_left <= 30 and progress < 90:
+            watch_signals.append(
+                f"The deadline is within {days_left} day(s), with {progress:g}% progress recorded."
+            )
+        else:
+            context_signals.append("A current expected completion date is recorded.")
+    else:
+        reasons.append("No current expected completion date is recorded, so schedule timing is hard to assess.")
+
+    if expected and original:
+        slip_days = (expected - original).days
+        if slip_days > 0:
+            signal = f"The current expected date is {slip_days} day(s) later than the original date."
+            (high_signals if slip_days > 30 else watch_signals).append(signal)
+        else:
+            context_signals.append("The current expected date is not later than the original date.")
+    elif original:
+        context_signals.append("An original completion date is recorded, but there is no current date to compare.")
+
+    budget = project.get("budget")
+    expenditure = project.get("expenditure")
+    if budget is not None and expenditure is not None:
+        if expenditure > budget:
+            high_signals.append("Recorded expenditure is above the recorded budget.")
+        elif budget > 0 and progress < 100:
+            spend_gap = expenditure / budget - progress / 100
+            if spend_gap >= 0.4:
+                high_signals.append(
+                    "Recorded spending is at least 40 percentage points ahead of progress."
+                )
+            elif spend_gap > 0.2:
+                watch_signals.append(
+                    "Recorded spending is more than 20 percentage points ahead of progress."
+                )
+            else:
+                context_signals.append("Recorded spending is not substantially ahead of progress.")
+    else:
+        reasons.append("Budget risk cannot be compared until both budget and expenditure are recorded.")
+
+    if project["status"] == "In Progress" and not project.get("milestones"):
+        watch_signals.append("No milestones are recorded to track near-term delivery.")
+    else:
+        overdue_milestones = [
+            milestone for milestone in project.get("milestones", [])
+            if not milestone.get("complete")
+            and milestone.get("due_date")
+            and milestone["due_date"] < today.isoformat()
+        ]
+        for milestone in overdue_milestones:
+            watch_signals.append(
+                f"Milestone “{milestone['name']}” was due {milestone['due_date']}."
+            )
+
+    reasons = high_signals + watch_signals + reasons + context_signals
+    if high_signals:
+        level, tone = "High attention", "high"
+    elif watch_signals:
+        level, tone = "Watch", "watch"
+    elif expected:
+        level, tone = "Lower current concern", "low"
+        reasons.insert(0, "No high-priority schedule or budget flags were found in the recorded details.")
+    else:
+        level, tone = "Need more data", "unknown"
+        reasons.insert(0, "There is not enough schedule information to assess delay risk.")
+
+    return {"level": level, "tone": tone, "reasons": reasons}
+
+
+def _simulate_project(project, form, today):
+    delay_text = str(form.get("delay_days") or "").strip()
+    if delay_text:
+        try:
+            delay_days = int(delay_text)
+        except ValueError as error:
+            raise ValueError("Extra delay must be a whole number of days.") from error
+    else:
+        delay_days = 0
+    if delay_days < 0 or delay_days > 3650:
+        raise ValueError("Extra delay must be between 0 and 3,650 days.")
+
+    changed_deadline = None
+    changed_text = str(form.get("changed_deadline") or "").strip()
+    if changed_text:
+        try:
+            changed_deadline = date.fromisoformat(changed_text)
+        except ValueError as error:
+            raise ValueError("Enter a valid changed deadline.") from error
+
+    increase_text = str(form.get("budget_increase") or "").strip()
+    if increase_text:
+        try:
+            budget_increase = float(increase_text.replace(",", ""))
+        except ValueError as error:
+            raise ValueError("Budget increase must be a number.") from error
+        if not math.isfinite(budget_increase) or budget_increase < 0 or budget_increase > 1_000_000_000_000:
+            raise ValueError("Budget increase must be between 0 and 1,000,000,000,000.")
+    else:
+        budget_increase = 0.0
+    if budget_increase and project.get("budget") is None:
+        raise ValueError("Record a project budget before testing a budget increase.")
+
+    current_deadline = (
+        date.fromisoformat(project["expected_completion_date"])
+        if project.get("expected_completion_date") else None
+    )
+    scenario_deadline = changed_deadline or current_deadline
+    if delay_days and scenario_deadline is None:
+        raise ValueError("Add a current or changed deadline before testing extra delay days.")
+    if scenario_deadline and delay_days:
+        try:
+            scenario_deadline += timedelta(days=delay_days)
+        except OverflowError as error:
+            raise ValueError("That delay would move the deadline outside the supported date range.") from error
+    start_text = project.get("start_date")
+    if scenario_deadline and start_text and scenario_deadline < date.fromisoformat(start_text):
+        raise ValueError("The scenario deadline cannot be before the project start date.")
+
+    hypothetical = dict(project)
+    if scenario_deadline:
+        hypothetical["expected_completion_date"] = scenario_deadline.isoformat()
+    if project.get("budget") is not None:
+        hypothetical["budget"] = float(project["budget"]) + budget_increase
+
+    expenditure = project.get("expenditure")
+    original_budget = project.get("budget")
+    scenario_budget = hypothetical.get("budget")
+
+    def utilization(amount):
+        if expenditure is None or amount is None or amount <= 0:
+            return None
+        return expenditure / amount * 100
+
+    return {
+        "baseline_risk": _project_delay_assessment(project, today),
+        "scenario_risk": _project_delay_assessment(hypothetical, today),
+        "current_deadline": current_deadline.isoformat() if current_deadline else None,
+        "scenario_deadline": scenario_deadline.isoformat() if scenario_deadline else None,
+        "current_budget": original_budget,
+        "scenario_budget": scenario_budget,
+        "current_utilization": utilization(original_budget),
+        "scenario_utilization": utilization(scenario_budget),
+        "delay_days": delay_days,
+        "budget_increase": budget_increase,
+    }
+
+
+@app.route("/", methods=["GET", "POST"])
 def dashboard():
     projects = get_projects()
     today = date.today()
+    selected_id = request.args.get("project", type=int)
+    simulation = None
+    simulation_error = None
+    simulation_form = {"delay_days": "", "changed_deadline": "", "budget_increase": ""}
+    if request.method == "POST":
+        if request.form.get("action") != "simulate":
+            abort(400)
+        posted_id = request.form.get("record_id", type=int)
+        if not posted_id or (selected_id and selected_id != posted_id):
+            abort(400)
+        selected_id = posted_id
+        simulation_form = {
+            "delay_days": request.form.get("delay_days", ""),
+            "changed_deadline": request.form.get("changed_deadline", ""),
+            "budget_increase": request.form.get("budget_increase", ""),
+        }
     query = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "").strip()
     visible_projects = [
@@ -1086,7 +1275,6 @@ def dashboard():
     }
     selected = None
     edit_project = None
-    selected_id = request.args.get("project", type=int)
     if selected_id:
         selected = get_project(selected_id)
         if selected is None:
@@ -1094,6 +1282,13 @@ def dashboard():
         selected["warnings"] = _project_warnings(selected, today)
         if request.args.get("edit") == "1":
             edit_project = selected
+        if request.method == "POST":
+            try:
+                simulation = _simulate_project(selected, request.form, today)
+            except ValueError as error:
+                simulation_error = str(error)
+        elif request.args.get("assess") == "1":
+            selected["delay_assessment"] = _project_delay_assessment(selected, today)
     preview = None
     token = request.args.get("import")
     if token:
@@ -1107,6 +1302,8 @@ def dashboard():
         budget_count=budget_count, expenditure_count=expenditure_count,
         deadlines=deadline_list, status_counts=status_counts,
         statuses=PROJECT_STATUSES, selected=selected, edit_project=edit_project,
+        simulation=simulation, simulation_error=simulation_error,
+        simulation_form=simulation_form,
         preview=preview, query=request.args.get("q", ""),
         status_filter=status_filter,
     )

@@ -1,0 +1,15 @@
+Modify my existing UpTrack project to make it a simple, complete, resume-worthy college project. Inspect the relevant existing code, reuse working features, and implement changes directly. Minimize token usage, unnecessary rewrites, dependencies, and repeated planning.
+
+**Main goal:** Users should manage their own construction projects from the main dashboard, not the Research tab.
+
+1. **My Projects:** Add, view, edit, and delete projects with deadlines, budgets, progress, and status. Preserve persistent storage.
+2. **Predict Delay:** Put this action directly on each personal project card/details page. Show an understandable risk level and reasons.
+3. **What-If Simulator:** Let users test extra delay days, changed deadlines, or budget increases and see projected impacts. Never modify actual project data unless explicitly saved.
+4. **ML integrity:** Inspect the existing model and preprocessing. Use ML only when inputs are genuinely compatible. Never invent missing values or mislabel rule-based warnings as ML predictions. If ML is unsupported for a personal project, show a transparent rule-based risk assessment instead.
+5. **Research:** Keep the existing Research page for historical government-data experiments, but make it secondary. Government projects must not appear as users' personal projects.
+6. **UI:** Keep the interface clean, responsive, and beginner-friendly. Reuse the existing Flask/Python architecture.
+7. **Testing:** Test project CRUD, storage after refresh, prediction/warnings, simulator calculations, and confirmation that unsaved simulations don't alter actual data. Fix blocking errors and report actual test results.
+
+Do not add unrelated features, rebuild the app, delete working functionality, push to GitHub, or deploy without my approval.
+
+**Implement these changes now, not just a plan. Prioritize a working end-to-end app over cosmetic polish. At completion, briefly report changed files, features completed, tests run, and remaining issues.

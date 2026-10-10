@@ -1142,6 +1142,26 @@ footer {
 .filter-form .button { min-height: 39px; }
 
 .project-list { border-top: 1px solid #eef1f5; }
+.project-entry {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #eef1f5;
+}
+.project-entry .project-row { flex: 1; min-width: 0; border-bottom: 0; }
+.project-risk-action {
+    flex: 0 0 auto;
+    margin-right: 17px;
+    padding: 7px 9px;
+    border: 1px solid #dce6f5;
+    border-radius: 7px;
+    background: #f8faff;
+    color: #356db9;
+    font-size: 9px;
+    font-weight: 650;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.project-risk-action:hover { border-color: #aec7ec; background: #f0f5fd; }
 .project-row {
     display: grid;
     grid-template-columns: 34px minmax(100px, 1fr) minmax(75px, 118px) auto 12px;
@@ -1296,6 +1316,86 @@ footer {
 
 .detail-panel { padding: 21px; }
 .detail-panel .panel-heading { align-items: flex-start; }
+.detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.risk-assessment,
+.simulation-result {
+    margin-bottom: 16px;
+    padding: 15px;
+    border: 1px solid #e1e7ef;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #536378;
+    font-size: 10px;
+    line-height: 1.5;
+}
+.risk-assessment.risk-high { border-color: #f0c9c5; background: #fff6f5; }
+.risk-assessment.risk-watch { border-color: #f0dfb8; background: #fffaf0; }
+.risk-assessment.risk-low,
+.risk-assessment.risk-complete { border-color: #c8e7d8; background: #f2fbf6; }
+.assessment-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.assessment-heading .eyebrow,
+.simulation-result > .eyebrow { margin: 0 0 3px; }
+.assessment-heading h3 { margin: 0; color: #34445b; font-size: 13px; }
+.assessment-heading h3 span { color: #356db9; }
+.risk-high .assessment-heading h3 span,
+.risk-text-high { color: #ad4540 !important; }
+.risk-watch .assessment-heading h3 span,
+.risk-text-watch { color: #9a6c19 !important; }
+.risk-low .assessment-heading h3 span,
+.risk-complete .assessment-heading h3 span,
+.risk-text-low,
+.risk-text-complete { color: #2d7c5c !important; }
+.risk-unknown .assessment-heading h3 span,
+.risk-text-unknown { color: #657489 !important; }
+.assessment-tag,
+.subtle-tag {
+    flex: 0 0 auto;
+    padding: 5px 8px;
+    border: 1px solid #e6eaf0;
+    border-radius: 99px;
+    background: #fff;
+    color: #758398;
+    font-size: 9px;
+    font-weight: 600;
+}
+.risk-assessment .microcopy { margin: 8px 0; }
+.risk-assessment ul,
+.simulation-result ul { display: grid; gap: 4px; margin: 8px 0; padding-left: 17px; }
+.risk-assessment > small { color: #8894a2; font-size: 9px; }
+.simulator-panel { padding: 21px; }
+.simulator-panel > .panel-heading { align-items: center; }
+.simulator-intro { margin: -5px 0 15px; color: #8390a0; font-size: 10px; line-height: 1.55; }
+.simulator-form,
+.simulator-form label { display: grid; gap: 7px; }
+.simulator-form { gap: 11px; }
+.simulator-form label { color: #657489; font-size: 10px; font-weight: 620; }
+.simulator-form input {
+    width: 100%;
+    min-height: 37px;
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px solid #e0e6ee;
+    border-radius: 7px;
+    outline: 0;
+    background: #fff;
+    color: #304158;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 450;
+}
+.simulator-form input:focus { border-color: #78a5e7; box-shadow: 0 0 0 3px rgba(68,126,213,.1); }
+.simulator-error { margin: 12px 0 0; }
+.simulation-result { margin: 17px 0 0; border-color: #dce6f5; background: #f8faff; }
+.simulation-comparison { display: grid; grid-template-columns: 1fr 22px 1fr; align-items: center; gap: 10px; margin: 12px 0; }
+.simulation-comparison > div { display: grid; gap: 4px; }
+.simulation-comparison > div > span,
+.simulation-facts p > span { color: #8491a1; font-size: 9px; }
+.simulation-comparison strong { color: #40536b; font-size: 12px; }
+.simulation-arrow { color: #98a6b7; font-size: 18px; text-align: center; }
+.simulation-facts { display: grid; gap: 7px; padding: 12px 0; border-top: 1px solid #e6ecf4; border-bottom: 1px solid #e6ecf4; }
+.simulation-facts p { display: flex; justify-content: space-between; gap: 12px; margin: 0; }
+.simulation-facts p > strong { color: #42546b; font-size: 9px; font-weight: 650; text-align: right; overflow-wrap: anywhere; }
+.simulation-result .microcopy { margin: 10px 0 0; }
 .warning-box, .success-box {
     margin-bottom: 16px;
     padding: 12px 14px;
@@ -1393,9 +1493,18 @@ footer {
     .project-row { grid-template-columns: 30px minmax(90px, 1fr) 45px 12px; gap: 8px; padding: 10px 12px; }
     .project-avatar { width: 29px; height: 29px; }
     .project-progress { display: none; }
+    .project-entry { align-items: flex-start; flex-wrap: wrap; }
+    .project-entry .project-row { flex: 1 1 100%; }
+    .project-risk-action { margin: 0 12px 10px auto; }
     .status-pill { max-width: 82px; overflow: hidden; text-overflow: ellipsis; }
     .detail-stats { grid-template-columns: repeat(2, 1fr); gap: 12px; }
     .detail-lower { grid-template-columns: 1fr; gap: 17px; }
+    .detail-panel .panel-heading { flex-direction: column; }
+    .detail-actions { justify-content: flex-start; }
+    .assessment-heading { align-items: flex-start; flex-direction: column; }
+    .simulation-comparison { grid-template-columns: 1fr 16px 1fr; gap: 7px; }
+    .simulation-facts p { align-items: flex-start; flex-direction: column; gap: 3px; }
+    .simulation-facts p > strong { text-align: left; }
     .budget-numbers { gap: 8px; }
     .budget-numbers strong { font-size: 15px; }
     .preview-actions { align-items: stretch; flex-direction: column; }

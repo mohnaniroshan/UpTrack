@@ -121,13 +121,16 @@
         {% if projects %}
           <div class="project-list">
             {% for project in projects %}
-              <a class="project-row {% if selected and selected.id == project.id %}selected{% endif %}" href="{{ url_for('dashboard', project=project.id) }}">
-                <span class="project-avatar avatar-{{ loop.index0 % 5 }}">{{ project.name[:1]|upper }}</span>
-                <span class="project-primary"><strong>{{ project.name }}</strong><small>{{ project.project_id }}{% if project.project_type %} · {{ project.project_type }}{% endif %}</small></span>
-                <span class="project-progress"><span class="progress-copy">{{ "%.0f"|format(project.progress) }}%</span><span class="progress-track"><i style="width: {{ project.progress }}%"></i></span></span>
-                <span class="status-pill status-pill-{{ project.status|lower|replace(' ', '-') }}">{{ project.status }}</span>
-                <span class="row-arrow" aria-hidden="true">›</span>
-              </a>
+              <div class="project-entry">
+                <a class="project-row {% if selected and selected.id == project.id %}selected{% endif %}" href="{{ url_for('dashboard', project=project.id) }}">
+                  <span class="project-avatar avatar-{{ loop.index0 % 5 }}">{{ project.name[:1]|upper }}</span>
+                  <span class="project-primary"><strong>{{ project.name }}</strong><small>{{ project.project_id }}{% if project.project_type %} · {{ project.project_type }}{% endif %}</small></span>
+                  <span class="project-progress"><span class="progress-copy">{{ "%.0f"|format(project.progress) }}%</span><span class="progress-track"><i style="width: {{ project.progress }}%"></i></span></span>
+                  <span class="status-pill status-pill-{{ project.status|lower|replace(' ', '-') }}">{{ project.status }}</span>
+                  <span class="row-arrow" aria-hidden="true">›</span>
+                </a>
+                <a class="project-risk-action" href="{{ url_for('dashboard', project=project.id, assess=1) }}">Check delay risk</a>
+              </div>
             {% endfor %}
           </div>
         {% else %}
@@ -147,8 +150,22 @@
       <article class="panel detail-panel" id="project-detail">
         <div class="panel-heading">
           <div><p class="eyebrow">PROJECT DETAILS · {{ selected.project_id }}</p><h2>{{ selected.name }}</h2></div>
-          <a class="button button-secondary" href="{{ url_for('dashboard', project=selected.id, edit=1) }}">Edit project</a>
+          <div class="detail-actions">
+            <a class="button button-secondary" href="{{ url_for('dashboard', project=selected.id, assess=1) }}">Assess delay risk</a>
+            <a class="button button-secondary" href="{{ url_for('dashboard', project=selected.id, edit=1) }}">Edit project</a>
+          </div>
         </div>
+        {% if selected.delay_assessment %}
+          <section class="risk-assessment risk-{{ selected.delay_assessment.tone }}" id="delay-assessment" aria-labelledby="risk-heading">
+            <div class="assessment-heading">
+              <div><p class="eyebrow">RULE-BASED CHECK</p><h3 id="risk-heading">Delay risk: <span>{{ selected.delay_assessment.level }}</span></h3></div>
+              <span class="assessment-tag">Not an ML prediction</span>
+            </div>
+            <p class="microcopy">This check uses only recorded dates, progress, milestones, and budget. The historical Research model was trained on different government records, so it is not applied to personal projects.</p>
+            <ul>{% for reason in selected.delay_assessment.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
+            <small>Rule-based screening is not a guarantee of project outcome.</small>
+          </section>
+        {% endif %}
         {% if selected.warnings %}
           <div class="warning-box"><strong>Items to review</strong>
             <ul>{% for warning in selected.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
@@ -179,6 +196,39 @@
         <form class="delete-form" method="post" action="{{ url_for('project_delete', record_id=selected.id) }}" data-loading-label="Deleting…" data-confirm="Delete {{ selected.name|e }}? This cannot be undone.">
           <button class="button button-danger-outline" type="submit">Delete project</button>
         </form>
+      </article>
+
+      <article class="panel simulator-panel" id="what-if">
+        <div class="panel-heading"><div><p class="eyebrow">SCENARIO PREVIEW</p><h2>What-If Simulator</h2></div><span class="subtle-tag">Does not save</span></div>
+        <p class="simulator-intro">Test schedule or budget changes without editing this project. Extra days are added after the changed deadline, if you enter one.</p>
+        <form class="simulator-form" method="post" action="{{ url_for('dashboard', project=selected.id) }}" data-loading-label="Calculating scenario…">
+          <input type="hidden" name="action" value="simulate">
+          <input type="hidden" name="record_id" value="{{ selected.id }}">
+          <div class="form-two">
+            <label>Extra delay (days)<input type="number" name="delay_days" min="0" max="3650" step="1" value="{{ simulation_form.delay_days }}" placeholder="0"></label>
+            <label>Changed expected deadline<input type="date" name="changed_deadline" value="{{ simulation_form.changed_deadline }}"></label>
+          </div>
+          <label>Budget increase <small class="label-help">Uses the same units as the project budget.</small><input type="number" name="budget_increase" min="0" step="0.01" value="{{ simulation_form.budget_increase }}" placeholder="0.00"></label>
+          <button class="button button-primary form-submit" type="submit">Run what-if</button>
+        </form>
+        {% if simulation_error %}<p class="flash error simulator-error" role="alert">{{ simulation_error }}</p>{% endif %}
+        {% if simulation %}
+          <section class="simulation-result" aria-live="polite">
+            <p class="eyebrow">HYPOTHETICAL RULE-BASED RESULT · NOT SAVED</p>
+            <div class="simulation-comparison">
+              <div><span>Current assessment</span><strong class="risk-text-{{ simulation.baseline_risk.tone }}">{{ simulation.baseline_risk.level }}</strong></div>
+              <span class="simulation-arrow" aria-hidden="true">→</span>
+              <div><span>Scenario assessment</span><strong class="risk-text-{{ simulation.scenario_risk.tone }}">{{ simulation.scenario_risk.level }}</strong></div>
+            </div>
+            <div class="simulation-facts">
+              <p><span>Expected completion</span><strong>{{ simulation.current_deadline or "Not recorded" }} <span aria-hidden="true">→</span> {{ simulation.scenario_deadline or "Not recorded" }}</strong></p>
+              <p><span>Project budget</span><strong>{% if simulation.current_budget is not none %}{{ "{:,.2f}".format(simulation.current_budget) }}{% else %}Not recorded{% endif %} <span aria-hidden="true">→</span> {% if simulation.scenario_budget is not none %}{{ "{:,.2f}".format(simulation.scenario_budget) }}{% else %}Not recorded{% endif %}</strong></p>
+              <p><span>Budget used at current spend</span><strong>{% if simulation.current_utilization is not none %}{{ "%.1f"|format(simulation.current_utilization) }}%{% else %}Not calculable{% endif %} <span aria-hidden="true">→</span> {% if simulation.scenario_utilization is not none %}{{ "%.1f"|format(simulation.scenario_utilization) }}%{% else %}Not calculable{% endif %}</strong></p>
+            </div>
+            <ul>{% for reason in simulation.scenario_risk.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
+            <p class="microcopy">To keep a change, open Edit project and save it deliberately. This preview did not change the saved record.</p>
+          </section>
+        {% endif %}
       </article>
       {% endif %}
 
