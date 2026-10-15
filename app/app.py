@@ -219,8 +219,24 @@ def numeric_value(value):
 
 
 # ============================================================
-# FEATURE MEDIANS
+# TRAINING-DATA MEDIANS FOR MISSING MODEL INPUTS
 # ============================================================
+
+# The prepared training dataset already contains the imputed feature values.
+# Use its medians for missing Research inputs, matching the approach used by
+# src/test_may_june_model.py. Do not use medians from the current prediction batch.
+MODEL_FEATURE_MEDIANS = {
+    column: float(pd.to_numeric(ml_dataset_df[column], errors="coerce").median())
+    for column in FEATURE_COLUMNS
+    if column in ml_dataset_df.columns
+}
+missing_medians = [column for column in FEATURE_COLUMNS if column not in MODEL_FEATURE_MEDIANS or pd.isna(MODEL_FEATURE_MEDIANS.get(column))]
+if missing_medians:
+    raise RuntimeError(
+        "Cannot initialize Research predictions: missing training medians for "
+        + ", ".join(missing_medians)
+    )
+
 
 # ============================================================
 # CREATE MODEL FEATURES
@@ -266,13 +282,12 @@ def make_features(project):
         project.get("time_overrun_months")
     )
 
-    missing = [column for column in FEATURE_COLUMNS if features.get(column) is None or pd.isna(features.get(column))]
-    if missing:
-        raise ValueError(
-            "Required model inputs are missing or invalid: "
-            + ", ".join(missing)
-            + ". No values were estimated."
-        )
+    # Match the existing evaluation pipeline: impute missing/invalid inputs
+    # with medians derived from the prepared training dataset.
+    for column in FEATURE_COLUMNS:
+        value = features.get(column)
+        if value is None or pd.isna(value):
+            features[column] = MODEL_FEATURE_MEDIANS[column]
 
     values = [float(features[column]) for column in FEATURE_COLUMNS]
     return np.array(values).reshape(1, -1)

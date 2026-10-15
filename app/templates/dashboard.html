@@ -319,19 +319,48 @@
   </footer>
 </main>
 <script>
-  document.querySelectorAll("form[data-loading-label]").forEach((form) => {
-    form.addEventListener("submit", (event) => {
-      if (form.dataset.confirm && !window.confirm(form.dataset.confirm)) {
-        event.preventDefault();
-        return;
-      }
-      const button = form.querySelector('button[type="submit"]');
-      if (!button) return;
-      button.disabled = true;
-      button.setAttribute("aria-busy", "true");
-      button.textContent = form.dataset.loadingLabel;
+  (() => {
+    // Restore scroll after same-page POST actions such as Run what-if.
+    const scrollKey = "uptrack-dashboard-scroll-y";
+    const savedY = sessionStorage.getItem(scrollKey);
+    if (savedY !== null) {
+      sessionStorage.removeItem(scrollKey);
+      window.addEventListener("load", () => {
+        const y = Number(savedY);
+        if (Number.isFinite(y)) requestAnimationFrame(() => window.scrollTo(0, y));
+      }, { once: true });
+    }
+
+    document.querySelectorAll("form[data-loading-label]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        if (form.dataset.confirm && !window.confirm(form.dataset.confirm)) {
+          event.preventDefault();
+          return;
+        }
+
+        // The simulator posts back to the dashboard; remember the current position.
+        if (form.classList.contains("simulator-form")) {
+          sessionStorage.setItem(scrollKey, String(window.scrollY));
+        }
+
+        const button = form.querySelector('button[type="submit"]');
+        if (!button) return;
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        button.textContent = form.dataset.loadingLabel;
+      });
     });
-  });
+
+    // If a scenario result/error was rendered, bring that result into view as a fallback.
+    const simulatorResult = document.querySelector(".simulation-result, .simulator-error");
+    if (simulatorResult) {
+      window.addEventListener("load", () => {
+        if (sessionStorage.getItem(scrollKey) === null) {
+          simulatorResult.scrollIntoView({ block: "nearest", behavior: "auto" });
+        }
+      }, { once: true });
+    }
+  })();
 </script>
 </body>
 </html>
